@@ -1,4 +1,4 @@
-const Ogario = new(class {
+const Ogario = new class {
     constructor() {
         this.serverURL = 'srv.ogario.eu';
         this.ogario = null;
@@ -33,8 +33,8 @@ const Ogario = new(class {
             this.ogario && this.ogario.readyState === this.ogario.OPEN
         );
     }
-})
-const Network = new(class {
+}
+const Network = new class {
     constructor() {
         this.version = 401;
         this.selfID = 0;
@@ -71,7 +71,7 @@ const Network = new(class {
     }
     parse(data) {
         data = new DataView(data.data);
-        const opCode = new Reader(data);
+        const opCode = new Reader().init(data);
         switch (opCode.readUInt8()) {
             case 0:
                 this.selfID = opCode.readUInt32();
@@ -119,7 +119,7 @@ const Network = new(class {
         const newPlayer = Player.setID(id);
         return this.players.set(id, newPlayer), newPlayer;
     }
-})
+}
 const Player = new class {
     constructor() {
         this.id = "";
@@ -131,124 +131,101 @@ const Player = new class {
         this.id = id;
     }
 }
-const Reader = class {
-    constructor(dataView) {
-        this.dataView = dataView;
-        this.index = 0;
-        this.maxIndex = dataView.byteLength;
-    }
-    readUInt8() {
-        const e = this.dataView.getUint8(this.index, true);
-        return this.index++, e;
-    }
-    readInt8() {
-        const e = this.dataView.getInt8(this.index, true);
-        return this.index++, e;
-    }
-    readUInt16() {
-        const e = this.dataView.getUint16(this.index, true);
-        return (this.index += 2), e;
-    }
-    readInt16() {
-        const e = this.dataView.getInt16(this.index, true);
-        return (this.index += 2), e;
-    }
-    readUInt32() {
-        const e = this.dataView.getUint32(this.index, true);
-        return (this.index += 4), e;
-    }
-    readInt32() {
-        const e = this.dataView.getInt32(this.index, true);
-        return (this.index += 4), e;
-    }
-    readFloat32() {
-        const e = this.dataView.getFloat32(this.index, true);
-        return (this.index += 4), e;
-    }
-    readFloat64() {
-        const e = this.dataView.getFloat64(this.index, true);
-        return (this.index += 8), e;
-    }
-    readUTF8string() {
-        for (
-            var e = "", n; !this.endOfBuffer && 0 !== (n = this.readUInt8());
 
-        )
-            e += String.fromCharCode(n);
-        return e;
+class Writer {
+    init() {
+        this.buffer = [];
+        this.length = 0;
     }
-    readUTF16string() {
-        for (
-            var e = "", n; !this.endOfBuffer && 0 !== (n = this.readUInt16());
 
-        )
-            e += String.fromCharCode(n);
-        return e;
+    writeUInt8(value) {
+        this.length++;
+        this.buffer.push({ method: 'setUint8', value, offset: 1 });
     }
-    readEscapedUTF8string() {
-        const e = this.readUTF8string();
-        return decodeURIComponent(escape(e));
+
+    writeUInt16(value) {
+        this.length += 2;
+        this.buffer.push({ method: 'setUint16', value, offset: 2 });
     }
-    decompress() {
-        const e = new Uint8Array(this.dataView.buffer),
-            t = this.readUInt32(),
-            i = new Uint8Array(t);
-        LZ4.decodeBlock(e.slice(5), i),
-            this.dataView = new DataView(i.buffer),
-            this.index = 0,
-            this.maxIndex = this.dataView.byteLength;
+
+    writeUInt32(value) {
+        this.length += 4;
+        this.buffer.push({ method: 'setUint32', value, offset: 4 });
     }
-    get endOfBuffer() {
-        return this.index >= this.maxIndex;
+
+    writeString8(value) {
+        const strLength = value.length;
+        this.writeUInt8(strLength);
+        for (let i = 0; i < strLength; ++i) {
+            const charCode = value.charCodeAt(i);
+            this.writeUInt8(charCode);
+        }
+    }
+
+    writeString16(value) {
+        const strLength = value.length;
+        this.writeUInt8(strLength);
+        for (let i = 0; i < strLength; ++i) {
+            const charCode = value.charCodeAt(i);
+            this.writeUInt16(charCode);
+        }
+    }
+
+    get data() {
+        const arraybuffer = new ArrayBuffer(this.length);
+        const view = new DataView(arraybuffer);
+        let offset = 0;
+
+        for (const data of this.buffer) {
+            view[data.method](offset, data.value, true);
+            offset += data.offset;
+        }
+
+        return view;
     }
 }
-const Writer = class {
-    constructor() {
-        this.array = []
+
+class Reader {
+    init(buffer) {
+        this.buffer = buffer;
+        this.index = 0;
     }
-    writeUInt8(d) {
-        return d |= 0,
-            0 > d || 255 < d ? void console.error(`value out of range [Min: 0, Max: 255, Value: ${d}]`) : void this.array.push(d);
+
+    readUInt8() {
+        const value = this.buffer.getUint8(this.index, true);
+        this.index++;
+        return value;
     }
-    writeInt8(d) {
-        return d |= 0, -128 > d || 127 < d ? void console.error(`value out of range [Min: -128, Max: 127, Value: ${d}]`) : void this.array.push(d);
+
+    readUInt16() {
+        const value = this.buffer.getUint16(this.index, true);
+        this.index += 2;
+        return value;
     }
-    writeUInt16(d) {
-        return d |= 0,
-            0 > d || 65535 < d ? void console.error(`value out of range [Min: 0, Max: 65535, Value: ${d}]`) : void this.array.push(d, d >> 8);
+
+    readUInt32() {
+        const value = this.buffer.getUint32(this.index, true);
+        this.index += 4;
+        return value;
     }
-    writeInt16(d) {
-        return d |= 0, -32768 > d || 32767 < d ? void console.error(`value out of range [Min: -32768, Max: 32767, Value: ${d}]`) : void this.array.push(d, d >> 8);
-    }
-    writeUInt32(d) {
-        return d |= 0,
-            0 > d || 4294967295 < d ? void console.error(`value out of range [Min: 0, Max: 4294967295, Value: ${d}]`) : void this.array.push(d, d >> 8, d >> 16, d >> 24);
-    }
-    writeInt32(d) {
-        return d |= 0, -2147483648 > d || 2147483647 < d ? void console.error(`value out of range [Min: -2147483648, Max: 2147483647, Value: ${d}]`) : void this.array.push(d, d >> 8, d >> 16, d >> 24);
-    }
-    writeUTF8string(d) {
-        for (let S = 0; S < d.length; S++) {
-            const I = d.charCodeAt(S);
-            this.writeUInt8(I)
+
+    readString8() {
+        let string = '';
+        const length = this.readUInt8();
+        for (let i = 0; i < length; ++i) {
+            const value = this.readUInt8();
+            string += String.fromCharCode(value);
         }
-        this.writeUInt8(0)
+        return string;
     }
-    writeEncodedUTF8string(d) {
-        const S = unescape(encodeURIComponent(d));
-        this.writeUTF8string(S)
-    }
-    writeUTF16StringNonZero(d) {
-        for (let S = 0; S < d.length; S++) {
-            const I = d.charCodeAt(S);
-            this.writeUInt8(I)
+
+    readString16() {
+        let string = '';
+        const length = this.readUInt8();
+        for (let i = 0; i < length; ++i) {
+            const value = this.readUInt16();
+            string += String.fromCharCode(value);
         }
-    }
-    reset() {
-        this.array = []
-    }
-    getbuffer() {
-        const d = new Uint8Array(this.array);
-        return d.buffer
+        return string;
     }
 }
